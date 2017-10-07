@@ -64,4 +64,3 @@ class PieceItem():
         return self.number
     def tile(self):
         return self.tile
-

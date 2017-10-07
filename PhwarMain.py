@@ -1,8 +1,6 @@
 import sys
-from shapes import *
-from board import *
-from rules import *
-
+from Board import *
+from Rules import *
 
 
 class Phwar(QMainWindow):

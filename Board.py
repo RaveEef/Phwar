@@ -1,7 +1,6 @@
+from ShapeItems import *
+from Rules import *
 from math import sqrt, cos, sin, pi
-from shapes import *
-from rules import *
-
 
 class Board(QFrame):
 
