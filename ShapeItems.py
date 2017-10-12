@@ -39,13 +39,15 @@ class TileItem(object):
     def piece(self):
         return self.piece
 
-class PieceItem():
+
+class PieceItem:
 
     def __init__(self):
         self.player = str()
         self.sign = str()
         self.number = None
         self.tile = None
+        self.name = ""
 
     def set_player(self, player):
         self.player = player
@@ -55,6 +57,8 @@ class PieceItem():
         self.number = number
     def set_tile(self, tile):
         self.tile = tile
+    def set_name(self):
+        self.name = self.player + self.sign + self.number
 
     def player(self):
         return self.player
@@ -64,3 +68,27 @@ class PieceItem():
         return self.number
     def tile(self):
         return self.tile
+    def name(self):
+        return self.name
+
+
+class BoardTiles:
+
+    def __init__(self, tiles=None):
+        if tiles is None:
+            self.tiles = list()
+        else:
+            self.tiles = list(tiles)
+
+    def set_tiles(self, tiles):
+        self.tiles = list(tiles)
+        self.len = tiles.__len__()
+    def __setitem__(self, key, value):
+        self.tiles[key] = value
+
+    def tiles(self):
+        return self.tiles
+    def __len__(self):
+        return self.tiles.__len__()
+    def __getitem__(self, item):
+        return self.tiles[item]
