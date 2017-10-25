@@ -1,300 +1,283 @@
-from ShapeItems import *
-from Rules import *
-from math import sqrt, cos, sin, pi
+from Move import *
+from UI import *
+from Utils import Searching
 
-class Board(QFrame):
+NOT_VALID = 0
+VALID = 1
+STOP_AT_CENTER = 2
 
-    NR = int()
-    NR_COORD = int()
-    NC = int()
-    S = int()
-    TILES = list()
-    PIECES = list()
-    INIT_PIECES = ['BN', 'BP1', 'BP2', 'BE1', 'BE2', 'BE3', 'BP3', 'BP4', 'BE4',
-                   'WN', 'WP1', 'WP2', 'WE1', 'WE2', 'WE3', 'WP3', 'WP4', 'WE4']
+INIT_PIECES = [("BN", "E1"),
+               ("BP1", "C1")]
+'''("BP2", "F2"), ("BP3", "B4"), ("BP4", "E2"),
+               ("BE1", "B2"), ("BE2", "D2"), ("BE3", "G2"), ("BE4", "D3"),
+               ("WN", "D7"),
+               ("WP1", "C6"), ("WP2", "E6"), ("WP3", "C5"), ("WP4", "F4"),
+               ("WE1", "B6"), ("WE2", "D6"), ("WE3", "G5"), ("WE4", "E5")]'''
 
-    tile_clicked = pyqtSignal(TileItem)
-    board_changed = pyqtSignal(tuple)
+class Board(QObject):
 
-    def __init__(self, nr, nc, s, parent=None):
-        super(Board, self).__init__(parent)
-        self.resize(600, parent.contentsRect().height())
-        self.setFocusPolicy(Qt.StrongFocus)
+    searcher = Searching()
 
+    def __init__(self, NR, NC, R=None):
+        super(Board, self).__init__()
+        self.R = R
 
-
-        Board.NR = nr
-        Board.NR_COORD = (2 * Board.NR) - 1
-        Board.NC = nc
-        Board.S = s
-
+        self.NR = NR
+        self.NR_COORD = 2*self.NR - 1
+        self.NC = NC
         self.tiles = list()
+        self.axial_tiles = dict()
+        self.names = list()
+        for i in range(self.NR):
+            self.tiles.append(list())
+            self.names.append(list())
+            for j in range(self.NC):
+                self.names[i].append("*")
+                self.tiles[i].append("")
 
-        self.selected = None
-        self.tile_h = float()
-        self.tile_w = float()
+        # [ ** ** ** D1 ** ** ** | ** ** C1 ** E1 ** ** ]
+        # [ ** B2 ** D2 **
+        # [          d3
+        # D4
+        # D5
+        # F6
+        # D7
 
-        self.init_tiles()
+        self.init_names()
         self.init_pieces()
+        print self.names
+        self.output_board()
+        self.axials(0, 0)
 
-        self.setMouseTracking(True)
+    def axials(self, x, y):
 
-    @classmethod
-    def board_tiles(cls):
-        cls.TILES = Board.tiles
+        q = x * 2/3 / 6
+        r = (-x / 3 + sqrt(3)/3 - y) / 6
+        print q, r, (-q-r)
 
-    @property
-    def r_hex(self):
-        self.tile_h = (self.contentsRect().height() - ((Board.NR + 1) * Board.S)) / Board.NR
-        self.tile_w = (2 * self.tile_h) / sqrt(3)
-        return self.tile_w / 2
+    def init_names(self):
+        center_column = self.NC/2
 
-    def init_tiles(self):
-        for j in range(Board.NC):
-            # for r in range(abs(c - Board.cols/2), 2*Board.cols - 1 - abs(c - Board.cols/2), 2):
-            first_row = abs(j - (Board.NC / 2))
-            last_row = (2 * Board.NC) - first_row - 1
-            for i in range(first_row, last_row, 2):
-                # chr(65) = A
-                name = str(chr(65+j)) + str((i/2) + 1)
-                d = (Board.NC / 2) - j
+        vertical_positioning = [(0, self.NR)]*7
+        for i in range(self.NC):
+            if i < center_column:
+                start = (center_column - i)/2
+                end = (center_column - (i - 1))/2
+                vertical_positioning[i] = (start, self.NR - end - start + 1)
+            if i > center_column:
+                start = (i-center_column)/2
+                end = (i - (center_column - 1))/2
+                vertical_positioning[i] = (start, self.NR - end - start + 1)
 
-                # For all columns on the left side, d is positive, so x-value decreases and vice versa
-                real_x = (self.contentsRect().width() / 2) - (d * (self.S + self.r_hex)) - ((d * self.r_hex) / 2)
-                # Initialize the vertical position to the minimum distance to the upper bound of the frame (spacing + half hexagon height)
-                # With every second column, relative to the mid, the first tile is completely positioned below the first tile 2 columns before
-                # The row's vertical position below the one above it (and includes spacing)
-                # If we are at an odd distance from the column in the middle, the initial offset is increased by half the spacing plus half hexagon height
-                real_y = Board.S + ((sqrt(3) * self.r_hex) / 2)
-                real_y += (abs(d)/ 2)*(Board.S + (sqrt(3) * self.r_hex))
-                real_y += (((i - first_row) / 2) * (Board.S + (sqrt(3) * self.r_hex)))
-                if d % 2 != 0:
-                    real_y += (Board.S + (sqrt(3) * self.r_hex)) / 2
+        for j in range(self.NC):
+            for i in range(vertical_positioning[j][0], vertical_positioning[j][1]):
+                if j < center_column:
+                    name = chr(j + 65) + str(i + 1) #abs(d)/2 + 1 + i - 2)
+                else:
+                    name = chr(j + 65) + str(i + 1) #d/2 + 1 + i)
 
-                self.add_tile(name, QPoint(i, j), self.tile_path(real_x, real_y), QPointF(real_x, real_y))
-
-            Board.TILES = self.tiles
+                '''print "{:<10}".format(name), "{:<25}".format("axial_center_i: {}".format(axial_midcol_startrow)), \
+                    "{:<25}".format("axial_center_z: {}".format(axial_midcol_z))
+                print "{:<10}".format(''),\
+                    "{:<25}".format("axial_i: {}".format(axial_i)), \
+                    "{:<25}".format("axial_z: {}".format(axial_z))'''
+                self.names[i][j] = name
 
     def init_pieces(self):
-        mid_col = Board.NC / 2
-        initial_pos = [(0, mid_col),
-                       (1, mid_col-1), (1,mid_col+1),
-                       (2, mid_col-2), (2, mid_col), (2, mid_col+2),
-                       (3, mid_col-1), (3, mid_col+1),
-                       (4, mid_col)]
-        for index, c in enumerate(initial_pos):
-            black_tile = [t for t in self.tiles if t.coord.x() == c[0] and t.coord.y() == c[1]][0]
-            self.add_piece(Board.INIT_PIECES[index], black_tile)
-            Board.PIECES.append((black_tile.piece, black_tile))
-            ''' Uncomment to position Black positron on F4
-            if black_tile.name == "C2":
-                F4 = [t for t in Board.TILES if t.name == "F4"][0]
-                self.add_piece(Board.PIECES[index], F4)
+        for piece, tile in INIT_PIECES:
+            row = int(tile[1:]) - 1
+            col = ord(tile[0]) - 65
+            self.tiles[row][col] = piece
+
+        self.axials(1,2)
+        #board = UI.currentBoard()
+        #print board.S
+        #board.set_board_pieces(self.tiles)
+
+    #TODO: Terminal_state checker function
+
+    def move_piece(self, _from, _to):
+        if self.tiles[_from.x][_from.y] == "":
+            return
+        if self.tiles[_to.x][_to.y] != "":
+            self.tiles[_to.x][_to.y] = ""
+        self.tiles[_to.x][_to.y] = self.tiles[_from.x][_from.y]
+        self.tiles[_from.x][_from.y] = ""
+
+    # TODO V: valid(_from, _to, tiles, capture)
+    # TODO V.1: --> if capture = False, include first if statement
+    # TODO V.2: --> replace self.tiles by tiles
+    # TODO V.3: --> nr = tiles.__len__(), nc = tiles[0].__len__()
+    # TODO V.4: --> replace self.NR by nr and self.NC by nc
+    def valid_move(self, _from, _to):
+        if self.tiles[_to.x()][_to.y()] != "":
+            return NOT_VALID
+
+        alpha_from = self.names[_from.x()][_from.y()]
+        alpha_to = self.names[_to.x()][_to.y()]
+
+        if _from.y() == _to.y():
+            if _from.x()() == _to.x()():
+                return NOT_VALID
+            if _from.x()() > _to.x()():
+                for i in range(_from.x()() - _to.x()()):
+                    if self.tiles[_from.x()() - i - 1][_from.y()] != "":
+                        return NOT_VALID
+                    if (_from.x()() - i - 1) == self.NR/2 and _from.y() == self.NC/2:
+                        return STOP_AT_CENTER
+            if _from.x()() < _to.x():
+                for i in range(_from.x() - _to.x()):
+                    if self.tiles[_from.x() + i + 1][_from.y()] != "":
+                        return NOT_VALID
+                    if (_from.x() + i - 1) == self.NR/2 and _from.y() == self.NC/2:
+                        return STOP_AT_CENTER
+        elif ((2 * _from.x()) - _from.y()) == ((2 * _to.x()) - _to.y()):
+            if _from.y() > _to.y():
+                for i in range(1, _from.y() - _to.y()):
+                    if _from.y() % 2 == 0:
+                        x = _from.x() - (i / 2)
+                    else:
+                        x = _from.x() - ((i / 2) + (i % 2))
+                    if self.tiles[x][_from.y() - i] != "":
+                        return NOT_VALID
+                    if x == self.NR / 2 and (_from.y() - i) == self.NC / 2:
+                        return STOP_AT_CENTER
+            if _from.y() < _to.y():
+                for i in range(1, _to.y() - _from.y()):
+                    if _from.y() % 2 == 0:
+                        x = _from.x() + ((i / 2) + (i % 2))
+                    else:
+                        x = _from.x() + (i / 2)
+                    if self.tiles[x][_from.y() + i] != "":
+                        return NOT_VALID
+                    if x == self.NR / 2 and (_from + i) == self.NC/2:
+                        return STOP_AT_CENTER
+        elif ((2 * _from.x()) + _from.y()) == ((2 * _to.x()) + _to.y()):
+            if _from.y() > _to.y():
+                for i in range(1, _from.y() - _to.y()):
+                    if _from.y() % 2 == 0:
+                        x = _from.x() + ((i / 2) + (i % 2))
+                    else:
+                        x  = _from.x() + (i / 2)
+                    if self.tiles[x][_from.y() - i] != "":
+                        return NOT_VALID
+                    if x == self.NR / 2 and (_from.y() - i) == self.NC / 2:
+                        return STOP_AT_CENTER
+            if _from.y() < _to.y():
+                for i in range(1, _to.y() - _from.y()):
+                    if _from.y() % 2 == 0:
+                        x = _from.x() - ((i / 2) + (i % 2))
+                    else:
+                        x = _from.x() - (i / 2)
+                    if self.tiles[x][_from.y() - i] != "":
+                        return NOT_VALID
+                    if x == self.NR / 2 and (_from + i) == self.NC/2:
+                        return STOP_AT_CENTER
+        return VALID
+
+    def valid_move_s(self, _from, _to):
+        return Board.searcher.valid_move(_from, _to, self.tiles, self.names)
+
+    def hex_lines(self, name, coord):
+        if self.tiles[coord.x()][coord.y()] != "":
+            name += "," + self.tiles[coord.x()][coord.y()]
+
+        # axcoord = Board.searcher.axial_coord(coord)
+        hexlines = ["{:^12}".format('______'),
+                        "  /{:^6}\\  ".format(''),
+                        " /{:^8}\\ ".format(name[2:4]),
+                        "/{:^10}\\".format(name[5:]),
+                        "\\{:^10}/".format("{:>3}{:^4}{:<3}".format((coord.x() - self.NC / 2),
+                                                                       (coord.y() - self.NC / 2),
+                                                                       (-coord.x() - coord.y() + self.NC))),
+                        " \\{:^8}/ ".format("{:>2} {:<2}".format(name[0], name[1])),
+                        "  \\{:_^6}/  ".format(''),
+                        " " * 12]
+        #if name.__len__() > 4:
+        return hexlines
+
+    def print_hex(self):
+        total_line = [""]*42 #35
+
+        for line in range(total_line.__len__()):
+            total_line[line] = " " * (12 * self.NC)
+
+        for j in range(self.NC):
+            d_center = abs(j - (self.NC / 2))
+            if j != self.NC/2:
+                vertical_offset = 4 * (j - self.NC/2)
             else:
-                self.add_piece(Board.PIECES[index], black_tile)'''
+                vertical_offset = 0
 
-            white_tile = [t for t in self.tiles if t.coord.x() == (Board.NR_COORD - 1 - c[0]) and t.coord.y() == c[1]][0]
-            white_index = index + (Board.INIT_PIECES.__len__() / 2)
-            self.add_piece(Board.INIT_PIECES[white_index], white_tile)
-            Board.PIECES.append((white_tile.piece, white_tile))
+            for i in range(self.NR):
+                if self.names[i][j] == "*":
+                    continue
 
-    def tile_path(self, cx, cy):
-        path = QPainterPath()
-        path.moveTo((cx - self.r_hex), cy)
-        for i in range(1,6):
-            x = cx + (self.r_hex * cos(((3 - i) * pi) / 3))
-            y = cy + (self.r_hex * sin(((3 - i) * pi) / 3))
-            path.lineTo(x, y)
-        path.closeSubpath()
-        # path.setFillRule(Qt.WindingFill)
-        return path
+                start_index = vertical_offset + (i * 8)
+                left = 12 * j
+                right = left + 12
+                hexlines = self.hex_lines(self.names[i][j], QPoint(i, j))
 
-    def piece_circle_path(self, tile):
-        path = QPainterPath()
-        path.moveTo(tile.pos)
-        path.addEllipse(tile.pos, 0.75 * self.r_hex, 0.75 * self.r_hex)
-        path.closeSubpath()
-        return path
+                for index, h in enumerate(hexlines):
+                    total_line[start_index + index] = total_line[start_index + index][:left] + h\
+                                                  + total_line[start_index + index][right:]
 
-    def piece_sign_path(self, tile):
-        if tile.piece.sign == "N":
-            return QPainterPath()
-        else:
-            path = QPainterPath()
-            path.moveTo(tile.pos.x() - self.r_hex / 2, tile.pos.y())
-            path.lineTo(tile.pos.x() + self.r_hex / 2, tile.pos.y())
+        for i, line in enumerate(total_line):
+            total_line[i] = "|  " + line + "  |"
+        total_line.insert(0, " " + "_" * ((12 * self.NC) + 4) + " ")
+        total_line[total_line.__len__() - 1] = "|" + ("_" * ((12 * self.NC) + 4)) + "|"
+        for line in total_line:
+            print line
 
-            if tile.piece.sign == "E":
-                return path
-            else:
-                vertical_line = QPainterPath()
-                vertical_line.moveTo(tile.pos.x(), tile.pos.y() - self.r_hex / 2)
-                vertical_line.lineTo(tile.pos.x(), tile.pos.y() + self.r_hex / 2)
-                path += vertical_line
-                return path
 
-    def add_tile(self, name, coord, path, pos):
-        t = TileItem()
-        t.set_name(name)
-        t.set_coord(coord)
-        t.set_pos(pos)
-        t.set_path(path)
-        t.set_color(Qt.white)
-        t.set_piece("")
+    # def color_print(color, style):
 
-        self.tiles.append(t)
-        #s_Board.TILES.append(t)
-        # self.update()
+        #COLORS = {'black': 30, 'red': 31, 'green': 32, 'yellow': 33,'blue': 34, 'magenta': 35, 'cyan': 36, 'white': 37}
+        #COLUMN_SPACE = ' | '
+        #ESC = '\033[%sm'
+        #CELL_FORMAT = ESC + '%-3s' + (ESC % 0)  # 0
+        #print CELL_FORMAT % (COLORS['yellow'], '{:^12}'.format('________'))
 
-    @staticmethod
-    def add_piece(piece, tile):
-        p = PieceItem()
-        p.set_player(piece[0])
-        p.set_sign(piece[1])
-        if piece.__len__() > 2:
-            p.set_number(piece[2])
-        else:
-            p.set_number("")
-        p.set_tile(tile)
-        p.set_name()
+    def output_board(self):
 
-        tile.set_piece(p)
+        outputter = list()
+        center_modulo = self.NC % 2
+        for i in range(self.names.__len__()):
+            split1 = list(self.names[i])
+            split2 = list(self.names[i])
+            for j in range(split1.__len__()):
+                if (j % 2) == center_modulo:
+                    split2.__setitem__(j, "*")
+                else:
+                    split1.__setitem__(j, "*")
+            outputter.append(split1)
+            outputter.append(split2)
 
-    def tile_at(self, mouse_pos):
-        for i, tile in enumerate(self.tiles):
-            if tile.path.contains(mouse_pos):
-                return i
-        return -1
+        outputter = outputter[:-1]
 
-    def paint_tiles(self, painter):
-        painter.setPen(QPen(Qt.black, 1))
-        painter.setBrush(QBrush(Qt.white))
+        for i in range(self.names.__len__()):
+            for k in [2 * i, (2 * i) + 1]:
+                if k == outputter.__len__():
+                    continue
+                printer1 = str()
+                printer2 = str()
+                printer3 = str()
+                for j in range(self.names[0].__len__()):
+                    if outputter[k][j] != "*":
+                        printer1 += "{:^7}".format(outputter[k][j])
+                        printer2 += "{:^7}".format("{},{},{}".format(i - self.NC/2, j - self.NC/2, 2 * (self.NC / 2) - i - j))
+                        # printer3 += "{:^7}".format("{},{},{}".format(i - self.NC/2, j - self.NC/2, self.NC - i - j - 1))
+                    else:
+                        printer1 += "{:^7}".format('')
+                        printer2 += "{:^7}".format('')
+                        # printer3 += "{:^7}".format('')
+                print printer1, "\n", printer2 # , "\n", printer3
+        print "---------------------------------------------------------------------"
+'''if __name__ == "__main__":
+    b = Board(5, 5)
+    b.init_names()
+    b.init_pieces()
+    b.print_hex()
 
-        for tile in self.tiles:
-            painter.setBrush(QBrush(tile.color))
-            painter.drawPath(tile.path)
-
-    def paint_pieces(self, painter):
-
-        for tile in [t for t in self.tiles if isinstance(t.piece, PieceItem)]:
-            if tile.piece.player == 'B':
-                painter.setBrush(QBrush(Qt.black))
-                painter.setPen(QPen(Qt.black, 0.1 * self.r_hex))
-                painter.drawPath(self.piece_circle_path(tile))
-
-                painter.setBrush(QBrush(Qt.white))
-                pen = QPen(Qt.white, 0.12 * sqrt(3) * self.r_hex)
-                pen.setCapStyle(Qt.RoundCap)
-                painter.setPen(pen)
-                painter.drawPath(self.piece_sign_path(tile))
-
-            elif tile.piece.player == 'W':
-                painter.setBrush(QBrush(Qt.white))
-                painter.setPen(QPen(Qt.black, 0.1 * self.r_hex))
-                painter.drawPath(self.piece_circle_path(tile))
-
-                painter.setBrush(QBrush(Qt.black))
-                pen = QPen(Qt.black, 0.12 * sqrt(3) * self.r_hex)
-                pen.setCapStyle(Qt.RoundCap)
-                painter.setPen(pen)
-                painter.drawPath(self.piece_sign_path(tile))
-
-            update_game = False
-            if isinstance(tile.piece, PieceItem):
-                old_tile = filter(lambda x: x[0] == tile.piece, Board.PIECES)[0]
-                if tile != old_tile[1]:
-                    update_game = True
-                    Board.PIECES[Board.PIECES.index(old_tile)] = (tile.piece, tile)
-
-            if update_game:
-                self.board_changed.emit((self.tiles, Board.PIECES))
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.fillRect(self.contentsRect(),Qt.lightGray)
-
-        self.paint_tiles(painter)
-        self.paint_pieces(painter)
-        self.paint_names(painter)
-
-    def paint_names(self, painter):
-        painter.setPen(QPen(Qt.red))
-        text_font = QFont()
-        text_font.setPointSize(10)
-        text_font.setBold(True)
-        painter.setFont(text_font)
-
-        for tile in self.tiles:
-            c = tile.pos
-            r = QRectF(c.x() - self.r_hex, c.y() - self.r_hex, self.r_hex * 2, sqrt(3) * self.r_hex)
-            coord_text = " {}\n({},{})".format(tile.name, tile.coord.x(), tile.coord.y())
-            painter.drawText(r, Qt.AlignCenter, coord_text)
-
-    def mousePressEvent(self, event):
-        for tile in self.tiles:
-            tile.set_color(Qt.white)
-        self.update()
-
-        mouse_pos = event.pos()
-        index = self.tile_at(mouse_pos)
-        if index != -1:
-            self.tiles[index].set_color(Qt.magenta)
-            self.tile_clicked.emit(self.tiles[index])
-            #self.line_of_sight(index)
-
-        self.update()
-
-        '''
-        colors = [QColor(Qt.blue), QColor(Qt.green), QColor(Qt.yellow)]
-        for index, direction in enumerate(sight):
-            for d in direction:
-                Board.TILES[d].set_color(colors[index])
-        self.update()
-        '''
-
-    '''def make_connection(self, board):
-        board.tile_clicked.connect(self.get_tile_clicked)
-
-    @pyqtSlot(TileItem)
-    def get_tile_clicked(self, tile):
-        if tile.piece is not None:
-            if self.from_tile is None:
-                print "from tile: ", tile.name
-                self.from_tile = tile
-                for x in self.get_line_of_sight(tile):
-                    for i in x[1]:
-                        print Board.TILES[i].name
-                #for in_sight in self.get_line_of_sight(self.from_tile):
-                    #print in_sight[1].name
-            elif self.to_tile is None:
-                print "to tile: ", tile.name
-                self.to_tile = tile'''
-
-    def line_of_sight(self, index):
-        selected = self.tiles[index]
-        sight = list()
-        v = list()
-        d1 = list()
-        d2 = list()
-
-        for i, t in enumerate(self.tiles):
-            if t.coord.x() != selected.coord.x() and t.coord.y() == selected.coord.y():
-                v.append(i)
-
-            if t != selected:
-                x_diff = selected.coord.x() - t.coord.x()
-                y_diff = selected.coord.y() - t.coord.y()
-                if x_diff == y_diff:
-                    d1.append(i)
-                elif x_diff == -y_diff:
-                    d2.append(i)
-
-        sight.append((Qt.blue, v))
-        sight.append((Qt.green, d1))
-        sight.append((Qt.yellow, d2))
-
-        for color, direction in sight:
-            for d in direction:
-                self.tiles[d].set_color(color)
-        self.update()
+    # print b.valid_move(QPoint(0,2), QPoint(2,5))
+    # print b.valid_move_s(QPoint(3, 4), QPoint(1, 1))'''
